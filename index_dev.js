@@ -34,9 +34,28 @@ const db = new sqlite3.Database('./database.db', (err) => {
         user_id INTEGER NOT NULL,
         username TEXT NOT NULL,
         comment TEXT NOT NULL,
+        rating INTEGER,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-    `);
+    `, (err) => {
+            if (err) {
+                console.error('Error creando tabla comments:', err.message);
+                return;
+            }
+            db.all('PRAGMA table_info(comments)', [], (err, columns) => {
+                if (err) {
+                    console.error('Error comprobando columnas de comments:', err.message);
+                    return;
+                }
+                const hasRating = columns.some((col) => col.name === 'rating');
+                if (!hasRating) {
+                    db.run('ALTER TABLE comments ADD COLUMN rating INTEGER', (err) => {
+                        if (err) console.error('Error agregando columna rating a comments:', err.message);
+                        else console.log('Columna rating añadida a la tabla comments');
+                    });
+                }
+            });
+        });
         console.log('Finalizada la conexión con la base de datos SQLite :)');
     }
 });
@@ -81,8 +100,13 @@ app.post('/api/login', (req, res) => {
 
 // Añadir comentario
 app.post('/api/comments', (req, res) => {
-    const { token, station_id, comment } = req.body;
+    const { token, station_id, comment, rating } = req.body;
     if (!token || !station_id || !comment) return res.status(400).json({ message: 'Datos incompletos' });
+
+    const parsedRating = rating == null ? null : Number(rating);
+    if (rating != null && (Number.isNaN(parsedRating) || parsedRating < 0 || parsedRating > 5)) {
+        return res.status(400).json({ message: 'Rating inválido. Debe ser un número entre 0 y 5.' });
+    }
 
     let payload;
     try {
@@ -92,8 +116,8 @@ app.post('/api/comments', (req, res) => {
     }
 
     db.run(
-        'INSERT INTO comments (station_id, user_id, username, comment) VALUES (?, ?, ?, ?)',
-        [station_id, payload.id, payload.username, comment],
+        'INSERT INTO comments (station_id, user_id, username, comment, rating) VALUES (?, ?, ?, ?, ?)',
+        [station_id, payload.id, payload.username, comment, parsedRating],
         function (err) {
             if (err) return res.status(500).json({ message: 'Error al guardar comentario', error: err.message });
             res.status(201).json({ message: 'Comentario guardado' });
@@ -104,7 +128,7 @@ app.post('/api/comments', (req, res) => {
 // Obtener comentarios de una estación
 app.get('/api/comments/:station_id', (req, res) => {
     db.all(
-        'SELECT username, comment, created_at FROM comments WHERE station_id = ? ORDER BY created_at DESC',
+        'SELECT username, comment, rating, created_at FROM comments WHERE station_id = ? ORDER BY created_at DESC',
         [req.params.station_id],
         (err, rows) => {
             if (err) return res.status(500).json({ message: 'Error al obtener comentarios', error: err.message });
