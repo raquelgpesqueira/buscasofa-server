@@ -98,6 +98,40 @@ app.post('/api/login', (req, res) => {
     });
 });
 
+// Obtener perfil de usuario
+app.get('/api/profile', (req, res) => {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader) {
+        return res.status(401).json({ message: 'Token no proporcionado' });
+    }
+
+    const token = authHeader.split(' ')[1];
+
+    let payload;
+    try {
+        payload = jwt.verify(token, SECRET);
+    } catch {
+        return res.status(401).json({ message: 'Token inválido' });
+    }
+
+    db.get(
+        'SELECT id, username, email, created_at FROM users WHERE id = ?',
+        [payload.id],
+        (err, user) => {
+            if (err) {
+                return res.status(500).json({ message: 'Error al obtener el perfil', error: err.message });
+            }
+
+            if (!user) {
+                return res.status(404).json({ message: 'Usuario no encontrado' });
+            }
+
+            res.json(user);
+        }
+    );
+});
+
 // Añadir comentario
 app.post('/api/comments', (req, res) => {
     const { token, station_id, comment, rating } = req.body;
